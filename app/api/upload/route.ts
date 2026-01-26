@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-        const { filename, contentType, size, lastModified } = await req.json();
+        const { filename, contentType, size, lastModified, context } = await req.json();
 
         if (!filename || !contentType) {
             return NextResponse.json(
@@ -52,7 +52,8 @@ export async function POST(req: NextRequest) {
             // Continue with upload if cache check fails
         }
 
-        const url = await getPresignedUploadUrl(uniqueFilename, contentType);
+        const metadata: Record<string, string> = context ? { context: String(context) } : {};
+        const url = await getPresignedUploadUrl(uniqueFilename, contentType, metadata);
 
         return NextResponse.json({ url, key: uniqueFilename });
     } catch (error) {

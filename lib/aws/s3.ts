@@ -11,12 +11,14 @@ const s3Client = new S3Client({
 
 export const getPresignedUploadUrl = async (
     filename: string,
-    contentType: string
+    contentType: string,
+    metadata: Record<string, string> = {}
 ) => {
     const command = new PutObjectCommand({
         Bucket: process.env.S3_BUCKET_NAME,
         Key: filename,
         ContentType: contentType,
+        Metadata: metadata,
     });
 
     return getSignedUrl(s3Client, command, { expiresIn: 3600 });

@@ -18,7 +18,7 @@ table = dynamodb.Table(table_name) if table_name else None
 openai_api_key = os.environ.get('OPENAI_API_KEY')
 openai_client = OpenAI(api_key=openai_api_key, timeout=800.0) if openai_api_key else None
 
-def process_video_and_analyze(video_path):
+def process_video_and_analyze(video_path, context_text=""):
     """
     Extracts frames from the video and sends them to OpenAI for analysis.
     Returns the analysis JSON.
@@ -57,34 +57,46 @@ def process_video_and_analyze(video_path):
     if not base64Frames:
         raise ValueError("No frames extracted from video.")
 
-    # Limit frames if too many (OpenAI limit ~ 10k token limit context window consideration)
-    # 50 frames is usually enough for a short interview clip analysis
-    if len(base64Frames) > 50:
-         print(f"Resampling frames from {len(base64Frames)} to 50...", flush=True)
-         step = len(base64Frames) / 50
-         base64Frames = [base64Frames[int(i * step)] for i in range(50)]
+    # Optimization: Limit to 20 frames (down from 50) for speed
+    if len(base64Frames) > 20:
+         print(f"Resampling frames from {len(base64Frames)} to 20...", flush=True)
+         step = len(base64Frames) / 20
+         base64Frames = [base64Frames[int(i * step)] for i in range(20)]
 
     print("Sending request to OpenAI...", flush=True)
     
+    # Inject user context if present
+    context_instruction = ""
+    if context_text:
+        try:
+             # Context is stored as JSON string in metadata: {"history": "..."}
+             ctx_json = json.loads(context_text)
+             history = ctx_json.get('history', '')
+             if history:
+                 context_instruction = f"USER CONTEXT / CHAT HISTORY:\n{history}\n\nINSTRUCTION: Incorporate the user's focus areas from the context above into your analysis."
+        except:
+             context_instruction = f"USER CONTEXT: {context_text}"
+
     PROMPT_MESSAGES = [
         {
             "role": "user",
             "content": [
                 "TASK: Technical Image Analysis.",
                 "INPUT: Screenshots from a video feed.",
+                f"{context_instruction}",
                 "OBJECTIVE: Evaluate optical properties: lighting uniformity, focus sharpness, and frame composition.",
                 "CONSTRAINT: Ignore all biological subjects.",
                 "OUTPUT FORMAT: JSON",
                 "content: { 'score': 85, 'transcript': 'clear lighting', 'feedback': 'good focus', 'key_strengths': ['sharp focus'], 'areas_for_improvement': ['adjust white balance'] }",
                 "Analyze the provided frames strictly according to these constraints.",
-                *map(lambda x: {"image": x, "resize": 768}, base64Frames),
+                *map(lambda x: {"image": x, "resize": 512}, base64Frames),
             ],
         },
     ]
     
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=PROMPT_MESSAGES,
             max_tokens=1000,
         )
@@ -138,14 +150,25 @@ def handler(event, context):
                         s3_key = unquote_plus(s3_record['s3']['object']['key'])
                         print(f"Processing video: s3://{s3_bucket}/{s3_key}", flush=True)
                         
-                        # 1. Download Video
+                        # 1. Fetch Metadata (Context)
+                        try:
+                            head_obj = s3_client.head_object(Bucket=s3_bucket, Key=s3_key)
+                            # Metadata keys are lowercased by S3
+                            metadata = head_obj.get('Metadata', {})
+                            context_str = metadata.get('context', '')
+                            print(f"Context found: {context_str}", flush=True)
+                        except Exception as meta_err:
+                            print(f"Failed to fetch metadata: {meta_err}", flush=True)
+                            context_str = ""
+
+                        # 2. Download Video
                         download_path = f"/tmp/{uuid.uuid4()}.mp4"
                         print(f"Downloading to {download_path}...", flush=True)
                         s3_client.download_file(s3_bucket, s3_key, download_path)
                         
-                        # 2. Analyze
+                        # 3. Analyze
                         try:
-                            analysis_result = process_video_and_analyze(download_path)
+                            analysis_result = process_video_and_analyze(download_path, context_str)
                         except Exception as analysis_err:
                             print(f"Analysis failed: {analysis_err}", flush=True)
                             analysis_result = {

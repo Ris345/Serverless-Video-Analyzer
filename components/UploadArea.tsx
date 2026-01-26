@@ -3,11 +3,15 @@
 import { useState, useRef, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { Upload, File, CheckCircle, AlertCircle, Loader2, X } from "lucide-react"
+import { useChat } from "@/lib/contexts/ChatContext"
+import { useVideoCompression } from "@/lib/hooks/useVideoCompression"
 
 export function UploadArea() {
+    const { messages } = useChat()
+    const { compress, isCompressing, compressionProgress } = useVideoCompression()
     const [isDragging, setIsDragging] = useState(false)
     const [file, setFile] = useState<File | null>(null)
-    const [status, setStatus] = useState<"idle" | "uploading" | "processing" | "completed" | "error">("idle")
+    const [status, setStatus] = useState<"idle" | "compressing" | "uploading" | "processing" | "completed" | "error">("idle")
     const [errorMessage, setErrorMessage] = useState("")
     const [progress, setProgress] = useState(0)
     const [uploadKey, setUploadKey] = useState<string | null>(null)
@@ -27,6 +31,8 @@ export function UploadArea() {
 
     const fileInputRef = useRef<HTMLInputElement>(null)
 
+    // ... existing state ...
+
     const fetchAnalysis = async () => {
         if (!uploadKey) return
 
@@ -39,16 +45,6 @@ export function UploadArea() {
                 alert("Analysis is still processing. Please try again in 30 seconds.")
             } else if (res.ok) {
                 const data = await res.json()
-                // Adjust for nested 'analysis' object if present (based on DynamoDB structure vs S3 structure)
-                // In S3 we wrap it: { ...metadata, analysis: { score... } }
-                // So we might want to display data.analysis or flattened. 
-                // Let's pass the whole object but the UI expects specific fields.
-                // If structure is { analysis: { score... } }, verify UI accessors.
-                // The UI code uses analysisResult.score etc.
-                // If the root object has score, fine. If it's in .analysis, we might need to map it.
-                // Lambda writes: { userId, videoId, status, analysis: { score, ... } }
-                // So we should use data.analysis for the main fields.
-
                 const result = data.analysis ? { ...data.analysis, status: data.status } : data
                 setAnalysisResult(result)
                 setIsModalOpen(true)
@@ -92,6 +88,9 @@ export function UploadArea() {
         }
     }, [status, uploadKey])
 
+
+    // ... existing functions ...
+
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault()
         setIsDragging(true)
@@ -120,18 +119,37 @@ export function UploadArea() {
     const startUpload = async () => {
         if (!file) return
 
+        let uploadFile: File | Blob = file
+
+        // Compression Threshold: 20MB
+        if (file.size > 20 * 1024 * 1024 && file.type.startsWith("video/")) {
+            setStatus("compressing")
+            try {
+                const compressedBlob = await compress(file)
+                uploadFile = compressedBlob
+            } catch (error) {
+                console.error("Compression failed, falling back to original file:", error)
+                // Fallback to original
+            }
+        }
+
         setStatus("uploading")
         setProgress(10)
 
         try {
+            // Prepare context from chat messages (last 10 messages)
+            const contextMessages = messages.slice(-10).map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\\n")
+            const context = contextMessages ? JSON.stringify({ history: contextMessages }) : ""
+
             // 1. Get Presigned URL or Cached Key
             const res = await fetch("/api/upload", {
                 method: "POST",
                 body: JSON.stringify({
                     filename: file.name,
-                    contentType: file.type,
-                    size: file.size,
+                    contentType: "video/mp4", // Compressed output is always mp4
+                    size: uploadFile.size,
                     lastModified: file.lastModified,
+                    context: context
                 }),
             })
 
@@ -154,9 +172,9 @@ export function UploadArea() {
             // 2. Upload to S3
             const uploadRes = await fetch(url, {
                 method: "PUT",
-                body: file,
+                body: uploadFile,
                 headers: {
-                    "Content-Type": file.type,
+                    "Content-Type": "video/mp4",
                 },
             })
 
@@ -259,6 +277,22 @@ export function UploadArea() {
                     </div>
                 )}
 
+                {status === "compressing" && (
+                    <div className="w-full max-w-md space-y-4">
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="text-primary font-mono animate-pulse">COMPRESSING VIDEO...</span>
+                            <span className="text-muted-foreground font-mono">{compressionProgress}%</span>
+                        </div>
+                        <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-orange-500 transition-all duration-300 ease-out"
+                                style={{ width: `${compressionProgress}%` }}
+                            />
+                        </div>
+                        <p className="text-xs text-center text-muted-foreground">Optimizing for faster upload...</p>
+                    </div>
+                )}
+
                 {status === "processing" && (
                     <div className="flex flex-col items-center gap-4">
                         <Loader2 className="w-12 h-12 text-primary animate-spin" />
@@ -310,66 +344,107 @@ export function UploadArea() {
             {/* Analysis Modal */}
             {isModalOpen && analysisResult && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-background rounded-xl border border-border shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col overflow-hidden">
-                        <div className="flex justify-between items-center p-6 border-b border-border">
-                            <h2 className="text-xl font-bold">Analysis Results</h2>
+                    <div className="bg-background rounded-xl border border-border shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
+
+                        {/* Header */}
+                        <div className="flex justify-between items-center p-6 border-b border-border bg-secondary/10">
+                            <div>
+                                <h2 className="text-2xl font-bold text-foreground">Analysis Results</h2>
+                                <p className="text-sm text-muted-foreground">AI Technical Assessment</p>
+                            </div>
                             <button onClick={() => setIsModalOpen(false)} className="text-muted-foreground hover:text-foreground">
                                 <X className="w-6 h-6" />
                             </button>
                         </div>
-                        <div className="p-6 overflow-y-auto">
-                            <div className="space-y-6">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="p-4 rounded-lg bg-secondary/50 border border-border">
-                                        <div className="text-sm text-muted-foreground">Score</div>
-                                        <div className="text-3xl font-bold text-primary">{analysisResult.score}/100</div>
-                                    </div>
-                                    <div className="p-4 rounded-lg bg-secondary/50 border border-border">
-                                        <div className="text-sm text-muted-foreground">Status</div>
-                                        <div className="text-xl font-medium capitalize">{analysisResult.status || "Completed"}</div>
-                                    </div>
-                                </div>
 
+                        <div className="p-6 overflow-y-auto space-y-8">
+
+                            {/* Score Card */}
+                            <div className="flex items-center justify-between bg-secondary/20 p-6 rounded-xl border border-border">
                                 <div>
-                                    <h3 className="font-semibold mb-2">Technical Transcript</h3>
-                                    <p className="text-sm text-muted-foreground bg-secondary/20 p-4 rounded-md border border-border">
-                                        {analysisResult.transcript}
-                                    </p>
-                                </div>
-
-                                <div>
-                                    <h3 className="font-semibold mb-2">Feedback</h3>
-                                    <p className="text-sm text-foreground">
-                                        {analysisResult.feedback}
-                                    </p>
-                                </div>
-
-                                <div className="grid md:grid-cols-2 gap-6">
-                                    <div>
-                                        <h3 className="font-semibold mb-2 text-green-500">Key Strengths</h3>
-                                        <ul className="list-disc list-inside text-sm space-y-1 text-muted-foreground">
-                                            {analysisResult.key_strengths?.map((item: string, i: number) => (
-                                                <li key={i}>{item}</li>
-                                            )) || <li>No specific strengths listed.</li>}
-                                        </ul>
-                                    </div>
-                                    <div>
-                                        <h3 className="font-semibold mb-2 text-orange-500">Areas for Improvement</h3>
-                                        <ul className="list-disc list-inside text-sm space-y-1 text-muted-foreground">
-                                            {analysisResult.areas_for_improvement?.map((item: string, i: number) => (
-                                                <li key={i}>{item}</li>
-                                            )) || <li>No specific improvements listed.</li>}
-                                        </ul>
+                                    <div className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Overall Score</div>
+                                    <div className="mt-1 flex items-baseline gap-2">
+                                        <span className={cn(
+                                            "text-5xl font-black",
+                                            analysisResult.score >= 80 ? "text-green-500" :
+                                                analysisResult.score >= 60 ? "text-orange-500" : "text-destructive"
+                                        )}>
+                                            {analysisResult.score}
+                                        </span>
+                                        <span className="text-muted-foreground">/ 100</span>
                                     </div>
                                 </div>
-
-                                <div>
-                                    <h3 className="font-semibold mb-2">Raw JSON</h3>
-                                    <pre className="bg-secondary/30 p-4 rounded-md overflow-x-auto text-xs font-mono border border-border">
-                                        {JSON.stringify(analysisResult, null, 2)}
-                                    </pre>
+                                <div className="text-right">
+                                    <div className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Status</div>
+                                    <div className="mt-1 px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-semibold capitalize inline-block">
+                                        {analysisResult.status || "Completed"}
+                                    </div>
                                 </div>
                             </div>
+
+                            {/* Transcript & Feedback */}
+                            <div className="space-y-4">
+                                <div>
+                                    <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+                                        📜 Transcript Summary
+                                    </h3>
+                                    <div className="text-sm text-foreground/80 leading-relaxed bg-secondary/30 p-4 rounded-lg border border-border/50">
+                                        {analysisResult.transcript}
+                                    </div>
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+                                        💡 Strategic Feedback
+                                    </h3>
+                                    <div className="text-sm text-foreground/80 leading-relaxed bg-blue-500/5 p-4 rounded-lg border border-blue-500/10">
+                                        {analysisResult.feedback}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Strengths & Improvements */}
+                            <div className="grid md:grid-cols-2 gap-6">
+                                <div className="space-y-3">
+                                    <h3 className="font-semibold text-green-600 flex items-center gap-2">
+                                        <CheckCircle className="w-4 h-4" /> Key Strengths
+                                    </h3>
+                                    <ul className="space-y-2">
+                                        {analysisResult.key_strengths?.map((item: string, i: number) => (
+                                            <li key={i} className="flex gap-2 text-sm text-muted-foreground bg-green-500/5 p-2 rounded border border-green-500/10">
+                                                <span className="text-green-500 mt-0.5">•</span> {item}
+                                            </li>
+                                        )) || <li className="text-sm text-muted-foreground italic">No specific strengths listed.</li>}
+                                    </ul>
+                                </div>
+                                <div className="space-y-3">
+                                    <h3 className="font-semibold text-orange-600 flex items-center gap-2">
+                                        <AlertCircle className="w-4 h-4" /> Areas for Improvement
+                                    </h3>
+                                    <ul className="space-y-2">
+                                        {analysisResult.areas_for_improvement?.map((item: string, i: number) => (
+                                            <li key={i} className="flex gap-2 text-sm text-muted-foreground bg-orange-500/5 p-2 rounded border border-orange-500/10">
+                                                <span className="text-orange-500 mt-0.5">•</span> {item}
+                                            </li>
+                                        )) || <li className="text-sm text-muted-foreground italic">No specific improvements listed.</li>}
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* Raw JSON Toggle */}
+                            <div className="pt-4 border-t border-border">
+                                <details className="group">
+                                    <summary className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-muted-foreground hover:text-primary transition-colors select-none">
+                                        <span>⚙️ VIEW DEBUG JSON</span>
+                                        <span className="group-open:rotate-180 transition-transform">▼</span>
+                                    </summary>
+                                    <div className="mt-4">
+                                        <pre className="bg-black/80 text-green-400 p-4 rounded-lg overflow-x-auto text-xs font-mono border border-border shadow-inner">
+                                            {JSON.stringify(analysisResult, null, 2)}
+                                        </pre>
+                                    </div>
+                                </details>
+                            </div>
+
                         </div>
                     </div>
                 </div>
