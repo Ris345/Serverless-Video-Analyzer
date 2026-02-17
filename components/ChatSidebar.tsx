@@ -3,10 +3,10 @@
 import { useState, useRef, useEffect } from "react"
 import { useChat } from "@/lib/contexts/ChatContext"
 import { cn } from "@/lib/utils"
-import { Send, Terminal, ChevronLeft } from "lucide-react"
+import { Send, Terminal, ChevronLeft, Trash2 } from "lucide-react"
 
 export function ChatSidebar() {
-    const { messages, addMessage, isOpen, toggleSidebar } = useChat()
+    const { messages, addMessage, clearMessages, isOpen, toggleSidebar } = useChat()
     const [input, setInput] = useState("")
     const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -64,11 +64,21 @@ export function ChatSidebar() {
                     !isOpen && "-translate-x-full"
                 )}
             >
-                <div className="h-16 flex items-center px-6 border-b border-border/50">
-                    <Terminal className="w-5 h-5 text-primary mr-2" />
-                    <span className="font-mono font-bold text-sm tracking-wider uppercase text-foreground/80">
-                        System Chat
-                    </span>
+                <div className="h-16 flex items-center justify-between px-6 border-b border-border/50">
+                    <div className="flex items-center">
+                        <Terminal className="w-5 h-5 text-primary mr-2" />
+                        <span className="font-mono font-bold text-sm tracking-wider uppercase text-foreground/80">
+                            Context
+                        </span>
+                    </div>
+                    <button
+                        onClick={clearMessages}
+                        disabled={messages.length === 0}
+                        title="Clear Context"
+                        className="p-1.5 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-0"
+                    >
+                        <Trash2 size={14} />
+                    </button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-4 font-mono text-sm" ref={scrollRef}>

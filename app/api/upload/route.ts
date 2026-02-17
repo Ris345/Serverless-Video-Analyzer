@@ -6,6 +6,7 @@ import { createHash } from "crypto"; // Import createHash for MD5
 
 export async function POST(req: NextRequest) {
     const session = await auth();
+    console.log(">>> [API] Upload Route Triggered");
     if (!session) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -27,33 +28,7 @@ export async function POST(req: NextRequest) {
         const userEmail = session.user?.email || "unknown";
         const uniqueFilename = `${userEmail}/${deterministicId}-${filename}`;
 
-        // Check DynamoDB for existing analysis
-        try {
-            // videoId in DynamoDB is just the filename part (suffix)
-            const videoIdSuffix = `${deterministicId}-${filename}`;
-
-            const existing = await docClient.get({
-                TableName: "InterviewAnalysis",
-                Key: {
-                    userId: userEmail,
-                    videoId: videoIdSuffix
-                }
-            });
-
-            if (existing.Item && existing.Item.status === "completed") {
-                console.log("Found cached analysis for:", uniqueFilename);
-                return NextResponse.json({
-                    cached: true,
-                    key: uniqueFilename
-                });
-            }
-        } catch (dbError) {
-            console.warn("Error checking cache:", dbError);
-            // Continue with upload if cache check fails
-        }
-
-        const metadata: Record<string, string> = context ? { context: String(context) } : {};
-        const url = await getPresignedUploadUrl(uniqueFilename, contentType, metadata);
+        const url = await getPresignedUploadUrl(uniqueFilename, contentType, {});
 
         return NextResponse.json({ url, key: uniqueFilename });
     } catch (error) {

@@ -4,11 +4,9 @@ import { useState, useRef, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { Upload, File, CheckCircle, AlertCircle, Loader2, X } from "lucide-react"
 import { useChat } from "@/lib/contexts/ChatContext"
-import { useVideoCompression } from "@/lib/hooks/useVideoCompression"
 
 export function UploadArea() {
     const { messages } = useChat()
-    const { compress, isCompressing, compressionProgress } = useVideoCompression()
     const [isDragging, setIsDragging] = useState(false)
     const [file, setFile] = useState<File | null>(null)
     const [status, setStatus] = useState<"idle" | "compressing" | "uploading" | "processing" | "completed" | "error">("idle")
@@ -39,7 +37,9 @@ export function UploadArea() {
         setIsLoadingAnalysis(true)
         try {
             const apiUrl = process.env.NEXT_PUBLIC_API_URL
-            const res = await fetch(`${apiUrl}/results/${uploadKey}.json`)
+            // Add timestamp to bypass browser cache
+            const cacheBuster = new Date().getTime()
+            const res = await fetch(`${apiUrl}/results/${uploadKey}.json?t=${cacheBuster}`)
 
             if (res.status === 404 || res.status === 403) {
                 alert("Analysis is still processing. Please try again in 30 seconds.")
@@ -119,37 +119,18 @@ export function UploadArea() {
     const startUpload = async () => {
         if (!file) return
 
-        let uploadFile: File | Blob = file
-
-        // Compression Threshold: 20MB
-        if (file.size > 20 * 1024 * 1024 && file.type.startsWith("video/")) {
-            setStatus("compressing")
-            try {
-                const compressedBlob = await compress(file)
-                uploadFile = compressedBlob
-            } catch (error) {
-                console.error("Compression failed, falling back to original file:", error)
-                // Fallback to original
-            }
-        }
-
         setStatus("uploading")
         setProgress(10)
 
         try {
-            // Prepare context from chat messages (last 10 messages)
-            const contextMessages = messages.slice(-10).map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\\n")
-            const context = contextMessages ? JSON.stringify({ history: contextMessages }) : ""
-
-            // 1. Get Presigned URL or Cached Key
+            // 1. Get Presigned URL
             const res = await fetch("/api/upload", {
                 method: "POST",
                 body: JSON.stringify({
                     filename: file.name,
-                    contentType: "video/mp4", // Compressed output is always mp4
-                    size: uploadFile.size,
-                    lastModified: file.lastModified,
-                    context: context
+                    contentType: file.type || "application/octet-stream",
+                    size: file.size,
+                    lastModified: file.lastModified
                 }),
             })
 
@@ -172,9 +153,9 @@ export function UploadArea() {
             // 2. Upload to S3
             const uploadRes = await fetch(url, {
                 method: "PUT",
-                body: uploadFile,
+                body: file,
                 headers: {
-                    "Content-Type": "video/mp4",
+                    "Content-Type": file.type || "application/octet-stream",
                 },
             })
 
@@ -195,6 +176,7 @@ export function UploadArea() {
         setErrorMessage("")
         setProgress(0)
         setUploadKey(null)
+        setAnalysisResult(null) // Clear previous result
         if (fileInputRef.current) fileInputRef.current.value = ""
     }
 
@@ -277,21 +259,6 @@ export function UploadArea() {
                     </div>
                 )}
 
-                {status === "compressing" && (
-                    <div className="w-full max-w-md space-y-4">
-                        <div className="flex items-center justify-between text-sm">
-                            <span className="text-primary font-mono animate-pulse">COMPRESSING VIDEO...</span>
-                            <span className="text-muted-foreground font-mono">{compressionProgress}%</span>
-                        </div>
-                        <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
-                            <div
-                                className="h-full bg-orange-500 transition-all duration-300 ease-out"
-                                style={{ width: `${compressionProgress}%` }}
-                            />
-                        </div>
-                        <p className="text-xs text-center text-muted-foreground">Optimizing for faster upload...</p>
-                    </div>
-                )}
 
                 {status === "processing" && (
                     <div className="flex flex-col items-center gap-4">

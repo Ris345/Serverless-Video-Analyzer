@@ -14,6 +14,7 @@ export type Message = {
 type ChatContextType = {
     messages: Message[]
     addMessage: (content: string, role?: "user" | "assistant") => void
+    clearMessages: () => void
     isOpen: boolean
     setIsOpen: (isOpen: boolean) => void
     toggleSidebar: () => void
@@ -52,11 +53,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setMessages((prev) => [...prev, newMessage])
     }
 
+    const clearMessages = () => {
+        setMessages([])
+        localStorage.removeItem("chat-messages")
+    }
+
     const toggleSidebar = () => setIsOpen((prev) => !prev)
 
     return (
         <ChatContext.Provider
-            value={{ messages, addMessage, isOpen, setIsOpen, toggleSidebar }}
+            value={{ messages, addMessage, clearMessages, isOpen, setIsOpen, toggleSidebar }}
         >
             {children}
         </ChatContext.Provider>

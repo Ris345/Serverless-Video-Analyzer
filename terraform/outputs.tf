@@ -1,23 +1,19 @@
-output "analysis_results_bucket" {
-  value = aws_s3_bucket.analysis_results.bucket
+output "ecr_repository_url" {
+  description = "ECR repository URL"
+  value       = aws_ecr_repository.worker.repository_url
 }
 
-output "api_endpoint" {
-  description = "API Gateway Endpoint URL"
-  value       = aws_api_gateway_stage.prod.invoke_url
-}
-
-output "s3_bucket_name" {
-  description = "Name of the S3 bucket"
+output "video_bucket_name" {
+  description = "Video upload bucket name"
   value       = aws_s3_bucket.video_bucket.id
 }
 
-output "worker_lambda_arn" {
-  description = "ARN of the worker Lambda"
-  value       = aws_lambda_function.worker.arn
+output "results_bucket_name" {
+  description = "Results bucket name"
+  value       = aws_s3_bucket.analysis_results.id
 }
 
-output "repository_url" {
-  description = "Use this to push images if you manage ECR elsewhere"
-  value       = var.worker_image_uri
+output "api_endpoint" {
+  description = "API Gateway endpoint URL"
+  value       = var.phase >= 2 ? aws_api_gateway_stage.prod[0].invoke_url : "Provision Phase 2 to get endpoint"
 }

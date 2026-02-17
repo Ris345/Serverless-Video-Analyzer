@@ -1,3 +1,0 @@
-worker_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/my-worker:latest"
-project_name     = "serverless-video-analyzer"
-environment      = "dev"

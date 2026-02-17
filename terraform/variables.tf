@@ -1,3 +1,9 @@
+variable "phase" {
+  description = "Deployment phase (1: Infra, 2: Lambda, 3: User DB)"
+  type        = number
+  default     = 1
+}
+
 variable "aws_region" {
   description = "AWS Region"
   type        = string
@@ -10,19 +16,14 @@ variable "project_name" {
   default     = "video-analyzer"
 }
 
-variable "worker_image_uri" {
-  description = "URI of the ECR image for the worker Lambda"
+variable "environment" {
+  description = "Environment (dev, prod)"
   type        = string
+  default     = "dev"
 }
 
 variable "openai_api_key" {
-  description = "OpenAI API Key"
+  description = "OpenAI API Key for analysis Lambda"
   type        = string
   sensitive   = true
-}
-
-variable "environment" {
-  description = "Environment (dev, prod, etc.)"
-  type        = string
-  default     = "dev"
 }
