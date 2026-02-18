@@ -15,5 +15,5 @@ output "results_bucket_name" {
 
 output "api_endpoint" {
   description = "API Gateway endpoint URL"
-  value       = var.phase >= 2 ? aws_api_gateway_stage.prod[0].invoke_url : "Provision Phase 2 to get endpoint"
+  value       = aws_api_gateway_stage.prod.invoke_url
 }

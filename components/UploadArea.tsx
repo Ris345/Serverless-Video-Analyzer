@@ -29,8 +29,6 @@ export function UploadArea() {
 
     const fileInputRef = useRef<HTMLInputElement>(null)
 
-    // ... existing state ...
-
     const fetchAnalysis = async () => {
         if (!uploadKey) return
 
@@ -89,8 +87,6 @@ export function UploadArea() {
     }, [status, uploadKey])
 
 
-    // ... existing functions ...
-
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault()
         setIsDragging(true)
@@ -123,14 +119,19 @@ export function UploadArea() {
         setProgress(10)
 
         try {
-            // 1. Get Presigned URL
+            // 1. Get Presigned URL (include chat context for analysis)
+            const chatContext = messages.length > 0
+                ? messages.map(m => `${m.role}: ${m.content}`).join("\n")
+                : ""
+
             const res = await fetch("/api/upload", {
                 method: "POST",
                 body: JSON.stringify({
                     filename: file.name,
                     contentType: file.type || "application/octet-stream",
                     size: file.size,
-                    lastModified: file.lastModified
+                    lastModified: file.lastModified,
+                    context: chatContext,
                 }),
             })
 

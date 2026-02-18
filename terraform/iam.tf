@@ -48,6 +48,17 @@ resource "aws_iam_role_policy" "worker_policy" {
         Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
         Effect   = "Allow"
         Resource = "*"
+      },
+      {
+        # X-Ray: send trace segments and fetch sampling rules
+        Action = [
+          "xray:PutTraceSegments",
+          "xray:PutTelemetryRecords",
+          "xray:GetSamplingRules",
+          "xray:GetSamplingTargets",
+        ]
+        Effect   = "Allow"
+        Resource = "*"
       }
     ]
   })

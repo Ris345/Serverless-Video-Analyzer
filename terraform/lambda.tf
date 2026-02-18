@@ -11,6 +11,10 @@ resource "aws_lambda_function" "worker" {
   memory_size   = 2048
   architectures = ["arm64"]
 
+  tracing_config {
+    mode = "Active"
+  }
+
   environment {
     variables = {
       RESULTS_BUCKET_NAME     = aws_s3_bucket.analysis_results.bucket

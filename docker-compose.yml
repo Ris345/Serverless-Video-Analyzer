@@ -1,0 +1,54 @@
+version: '3.8'
+
+# Note: Grafana runs on port 3001 (not 3000) to avoid conflicting with
+# the Next.js dev server running on the host at port 3000.
+
+services:
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: video-analyzer-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/video-analyzer.json
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+      - loki
+
+  loki:
+    image: grafana/loki:latest
+    container_name: video-analyzer-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yaml
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: video-analyzer-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    # Allow Prometheus to scrape host.docker.internal (Next.js on host)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=7d'
+
+  pushgateway:
+    image: prom/pushgateway:latest
+    container_name: video-analyzer-pushgateway
+    ports:
+      - "9091:9091"
+
+volumes:
+  grafana-storage:

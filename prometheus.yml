@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Scrape Pushgateway (for Lambda and other batch jobs)
+  - job_name: 'pushgateway'
+    honor_labels: true
+    static_configs:
+      - targets: ['pushgateway:9091']
+
+  # Scrape Next.js application metrics
+  # Uses host.docker.internal so Prometheus (in Docker) can reach the host
+  - job_name: 'nextjs'
+    static_configs:
+      - targets: ['host.docker.internal:3000']
+    metrics_path: '/api/metrics'
+    scrape_interval: 15s
+
+  # Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
